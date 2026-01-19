@@ -18,8 +18,8 @@ st.set_page_config(
 @st.cache_data
 def load_data():
     base_path = Path(__file__).resolve().parent
-    hr_path = base_path / "data" / "HR.csv"
-    mkt_path = base_path / "data" / "marketing.csv"
+    hr_path = "data / HR.csv"
+    mkt_path = "data / marketing.csv"
 
     hr = pd.read_csv(hr_path)
     mkt = pd.read_csv(mkt_path)
