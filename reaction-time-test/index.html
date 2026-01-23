@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Reaction Test</title>
+    <meta name="description" content="Test your reaction speed with this premium neon-styled reaction time test.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+
+        <!-- Start Screen -->
+        <section id="start-screen" class="screen active">
+            <h1 class="glow-text">PULSE REFLEX</h1>
+            <p class="subtitle">Test your speed. Don't miss.</p>
+            <button id="start-btn" class="primary-btn">INITIATE SEQUENCE</button>
+            <div class="instruction">
+                <p>Click the <span>TARGET</span> as fast as you can.</p>
+                <p>Miss and it's <span>GAME OVER</span>.</p>
+            </div>
+
+            <div id="start-history" class="history-container">
+                <h3>TOP RECORDS</h3>
+                <ul id="leaderboard-list-start"></ul>
+            </div>
+        </section>
+
+        <!-- Game Screen -->
+        <section id="game-screen" class="screen">
+            <div id="game-area">
+                <div id="target-btn" class="target"></div>
+            </div>
+            <div class="hud">
+                <div class="hud-item">WAVE: <span id="round-counter">0</span>/10</div>
+            </div>
+        </section>
+
+        <!-- Game Over Screen -->
+        <section id="game-over-screen" class="screen">
+            <h1 class="danger-text">SYSTEM FAILURE</h1>
+            <p class="subtitle">Target Missed.</p>
+            <button id="retry-btn-fail" class="primary-btn">RETRY</button>
+        </section>
+
+        <!-- Result Screen -->
+        <section id="result-screen" class="screen">
+            <h1 class="glow-text">COMPLETE</h1>
+            <div class="result-box">
+                <div class="stat">
+                    <span class="label">TOTAL TIME</span>
+                    <span class="value" id="final-score">0ms</span>
+                </div>
+                <div class="stat">
+                    <span class="label">AVERAGE</span>
+                    <span class="value" id="average-score">0ms</span>
+                </div>
+            </div>
+
+            <!-- Name Input Section -->
+            <div id="save-score-section" class="input-container">
+                <input type="text" id="player-name" placeholder="ENTER NAME" maxlength="10">
+                <button id="save-score-btn" class="primary-btn small-btn">SAVE RANK</button>
+            </div>
+
+            <div class="history-section">
+                <h3>LEADERBOARD</h3>
+                <ul id="leaderboard-list-result">
+                    <!-- History items will be injected here -->
+                </ul>
+            </div>
+
+            <button id="retry-btn-success" class="primary-btn">RETRY</button>
+        </section>
+
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

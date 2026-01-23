@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Menu Tree Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Menu Tree to SVG</h1>
+            <p>Generate a Figma-ready vector menu tree from your data.</p>
+        </header>
+
+        <main>
+            <section class="input-section">
+                <label for="menu-input">Menu Structure (JSON)</label>
+                <div class="helper-text">Enter nested JSON with 'label' and optional 'children'.</div>
+                <textarea id="menu-input" spellcheck="false">{
+  "label": "Root",
+  "children": [
+    {
+      "label": "Products",
+      "children": [
+        { "label": "Electronics" },
+        { "label": "Clothing" }
+      ]
+    },
+    {
+      "label": "Services",
+      "children": [
+        { "label": "Consulting" },
+        { "label": "Support" }
+      ]
+    },
+    { "label": "About Us" }
+  ]
+}</textarea>
+                <div class="actions">
+                    <button id="generate-btn" class="primary-btn">Update Preview</button>
+                    <button id="download-btn" class="secondary-btn">Download SVG for Figma</button>
+                </div>
+            </section>
+
+            <section class="preview-section">
+                <h2>Preview</h2>
+                <div id="svg-container" class="svg-wrapper">
+                    <!-- SVG will be injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
