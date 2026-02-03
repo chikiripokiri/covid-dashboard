@@ -50,5 +50,4 @@ fig.update_layout(
         range = [0,1000]
     )
 )
-
 fig.show()
