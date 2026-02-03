@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 
 # 한국 종합 데이터 로드
-df_total = pd.read_csv("kr_daily.csv") 
+df_total = pd.read_csv("data/kr_daily.csv") 
 # 날짜 형식 변환 및 정렬
 df_total["date"] = pd.to_datetime(df_total["date"], format="%Y%m%d")
 df_total = df_total.sort_values("date").reset_index(drop=True)
@@ -20,7 +20,7 @@ df_total = pd.concat([df_total, new_cols], axis=1) # 기존데이터 프레임�
 df_total.fillna(0, inplace=True) # 첫 행 NaN 제거
 
 # 지역별 데이터 로드
-df = pd.read_csv("kr_regional_daily_excel.csv")
+df = pd.read_csv("data/kr_regional_daily_excel.csv")
 # 날짜 형식 변환 및 정렬
 df["date"] = pd.to_datetime(df["date"], format="%Y%m%d")
 df = df.sort_values(["region", "date"]).reset_index(drop=True)
@@ -41,6 +41,8 @@ fig.add_trace(go.Bar(x=df_Daegu.date, y=df_Daegu.new_confirmed,
 
 fig.update_layout(
     title = "한국 전체, 대구 일별 신규 확진자수",
+    
+    # 축 제목 및 범위 설정
     xaxis = dict(
         title = "날짜",
         range = ["2020-02-17","2020-08-31"]
@@ -48,6 +50,11 @@ fig.update_layout(
     yaxis = dict(
         title = "신규 확진자 수",
         range = [0,1000]
-    )
+    ),
+    
+    # 범례 위치 조정
+    legend_x=0.8,
+    legend_y=0.95,
+    legend_xanchor="left"
 )
 fig.show()
