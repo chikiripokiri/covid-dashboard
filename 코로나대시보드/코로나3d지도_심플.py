@@ -153,11 +153,10 @@ print("Rendering Plotly Surface...")
 x_coords = np.linspace(min_lon, max_lon, width)
 y_coords = np.linspace(max_lat, min_lat, height)
 
-# Color Scale
+# Color Scale: Pastel Blue (Low) -> Pastel Red (High)
 colorscale = [
-    [0, "#ffecd2"],
-    [0.2, "#fcb69f"],
-    [1.0, "#ff6b6b"]
+    [0, "#a0c4ff"],     # Pastel Blue
+    [1.0, "#ffadad"]    # Pastel Red
 ]
 
 fig = go.Figure(data=[go.Surface(
