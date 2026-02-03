@@ -134,7 +134,7 @@ y_coords = np.linspace(max_lat, min_lat, height)
 # Color Scale: Pastel Blue (Low) -> Pastel Red (High)
 colorscale = [
     [0, "#6bb5ff"],       # Level 0
-    [0.333, "#b590b5"],   # Level 6 (Pulling Level 9 color to here)
+    [0.277, "#b590b5"],   # Level 5 (Pulling Level 9 color to here)
     [1.0, "#ff6b6b"]      # Level 18
 ]
 
