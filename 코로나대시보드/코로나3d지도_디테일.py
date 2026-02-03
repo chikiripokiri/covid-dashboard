@@ -5,11 +5,10 @@ import plotly.graph_objects as go
 import rasterio
 from rasterio import features, transform
 from scipy.ndimage import binary_dilation
-# Shapely import removed as simplification is disabled
 
 # 1. Inputs
 geojson_path = 'korea_provinces.json'
-csv_path = 'kr_regional_daily_excel.csv'
+csv_path = '../kr_regional_daily_excel.csv'
 
 # 2. Load Data
 print("Loading Data...")
@@ -134,8 +133,9 @@ y_coords = np.linspace(max_lat, min_lat, height)
 
 # Color Scale: Pastel Blue (Low) -> Pastel Red (High)
 colorscale = [
-    [0, "#a0c4ff"],     # Pastel Blue
-    [1.0, "#ffadad"]    # Pastel Red
+    [0, "#6bb5ff"],       # Level 0
+    [0.333, "#b590b5"],   # Level 6 (Pulling Level 9 color to here)
+    [1.0, "#ff6b6b"]      # Level 18
 ]
 
 fig = go.Figure(data=[go.Surface(
