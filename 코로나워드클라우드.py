@@ -3,43 +3,69 @@ from wordcloud import WordCloud
 import plotly.graph_objects as go
 import plotly.express as px
 
-# 1. Load Data
 file_path = 'kr_regional_daily_excel.csv'
 df = pd.read_csv(file_path)
 
-# 2. Filter for the latest date (20230904)
-#   The file has 'date', 'region', 'confirmed', 'death', 'released'
-#   We need cumulative confirmed cases for each region on the last date.
 target_date = 20230904
 daily_df = df[df['date'] == target_date].copy()
 
-# Remove 'Quarantine' or 'Total' if present, usually 'Quarantine' is a separate category
-# Let's keep all regions except maybe 'Total' if it exists. Based on previous `tail`, 'Quarantine' exists.
-# User asked for regional data, 'Quarantine' (검역) is technically a category. Let's keep it or remove it?
-# Usually maps exclude it, but word clouds can include it. I'll include it for now.
-# However, let's normalize the region names if needed. They seem to be in English.
+# Translate English regions to Korean
+korean_mapping = {
+    'Seoul': '서울', 'Busan': '부산', 'Daegu': '대구', 'Incheon': '인천',
+    'Gwangju': '광주', 'Daejeon': '대전', 'Ulsan': '울산', 'Sejong': '세종',
+    'Gyeonggi': '경기', 'Gangwon': '강원', 'Chungbuk': '충북', 'Chungnam': '충남',
+    'Jeonbuk': '전북', 'Jeonnam': '전남', 'Gyeongbuk': '경북', 'Gyeongnam': '경남',
+    'Jeju': '제주', 'Quarantine': '검역'
+}
 
-# Create a dictionary for word cloud: {region: confirmed_count}
-data = daily_df.set_index('region')['confirmed'].to_dict()
+# Apply mapping
+daily_df['region_kr'] = daily_df['region'].map(korean_mapping)
+original_data = daily_df.set_index('region_kr')['confirmed'].to_dict()
+
+def calculate_weight(count):
+    if count < 500000:
+        return 1
+    elif count < 1000000:
+        return 2
+    elif count < 2000000:
+        # Base 3 at 1,000,000
+        # (count - 1000000) // 100000 increases index
+        increment = int((count - 1000000) // 100000)
+        return 3 + increment
+    elif count < 5000000:
+        return 13
+    elif count < 8000000:
+        return 14
+    else:
+        return 15
+
+weighted_data = {k: calculate_weight(v) for k, v in original_data.items()}
 
 # 3. Generate Word Cloud Layout
-# We use WordCloud to calculate the positions and sizes of the words.
-# We don't actually need the image, just the layout.
-# but we need a font for Korean if there were Korean characters.
-# The CSV has English region names (Seoul, Busan, etc.), so default font is fine.
-# Wait, let's check if the CSV has English or Korean from the `head` output.
-# Output of head: "20200217,Seoul,14,0,3" -> English.
-# So we don't strictly need a Korean font, but using one doesn't hurt.
-# Let's stick to default compatible font or just let WordCloud handle it since it's English.
+# Use square canvas to cluster words to center
+# Relative scaling 1.0 for strict proportions
+# REQUIRED: Korean font path. AppleGothic is standard on Mac.
+font_path = '/System/Library/Fonts/Supplemental/AppleGothic.ttf'
 
-wc = WordCloud(width=800, height=600, background_color='white', max_words=100)
-wc.generate_from_frequencies(data)
+import numpy as np
+# Create circular mask
+x, y = np.ogrid[:600, :600]
+# circle center (300, 300), radius 180 (Reduced closer to center)
+mask = (x - 300) ** 2 + (y - 300) ** 2 > 180 ** 2
+mask = 255 * mask.astype(int)
 
-# 4. Extract Layout Data for Plotly
-# wc.layout_ contains a list of tuples: (word, count), font_size, position, orientation, color
-# position is (y, x) ? No, it's (x, y) relative to canvas.
-# Actually, let's inspect what wc.layout_ gives.
-# It is a list of (string, size, (x, y), orientation, color)
+
+wc = WordCloud(
+    width=600, 
+    height=600, 
+    background_color='white', 
+    max_words=100, 
+    relative_scaling=1.0, 
+    min_font_size=1,
+    font_path=font_path,
+    mask=mask
+)
+wc.generate_from_frequencies(weighted_data)
 
 word_list = []
 size_list = []
@@ -49,30 +75,26 @@ color_list = []
 hover_text_list = []
 
 for item in wc.layout_:
-    word = item[0][0] # The word text
-    count = data[word] # Original count
+    word = item[0][0] # The word text (now Korean)
+    original_count = original_data[word] # Original count
+    
     font_size = item[1]
     position = item[2]
     orientation = item[3]
-    color = item[4] # This is a color string/tuple from WordCloud
+    color = item[4] 
     
-    # Plotly Scatter text needs x, y.
-    # WordCloud 0,0 is top-left. Plotly 0,0 is usually bottom-left unless we reverse y-axis.
-    # Let's just use x, y and flip y axis in layout.
-    
-    x = position[1] # column ?
-    y = position[0] # row ? 
+    x = position[1] 
+    y = position[0] 
     
     word_list.append(word)
-    size_list.append(font_size)
-    x_list.append(position[1] + font_size/2) # Centering attempt
+    # Scale font size. 
+    size_list.append(font_size * 0.5) 
+    x_list.append(position[1] + font_size/2) 
     y_list.append(position[0] + font_size/2) 
     
-    hover_text_list.append(f"{word}: {count:,}")
-    color_list.append(count)
+    hover_text_list.append(f"{word}: {original_count:,}")
+    color_list.append(original_count) # Color based on original magnitude
 
-# Map counts to colors using a colormap
-# We need to normalize the counts to 0-1 range for colormap
 if not color_list:
     print("No data found for word cloud.")
     exit()
@@ -81,15 +103,11 @@ min_count = min(color_list)
 max_count = max(color_list)
 norm_color_list = [(c - min_count) / (max_count - min_count) if max_count > min_count else 0.5 for c in color_list]
 
-# Use Plotly's built-in colorscale sampling or matplotlib
 import plotly.colors as pc
 
-# Viridis colorscale
 colorscale_name = 'Viridis' 
-# pc.sample_colorscale takes a list of normalized values [0-1] and returns hex colors
 hex_colors = pc.sample_colorscale(colorscale_name, norm_color_list)
 
-# 5. Create Plotly Figure
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
@@ -101,19 +119,19 @@ fig.add_trace(go.Scatter(
     hoverinfo='text',
     textfont=dict(
         size=size_list,
-        color=hex_colors
+        color=hex_colors,
+        family="AppleGothic" # Ensure Plotly also uses a Korean font
     )
 ))
-
-# Update layout to match WordCloud dimensions and hide axes
 fig.update_layout(
-    width=800,
+    width=600,
     height=600,
     xaxis=dict(showgrid=False, showticklabels=False, visible=False),
     yaxis=dict(showgrid=False, showticklabels=False, visible=False, autorange='reversed'), 
     plot_bgcolor='white',
     title=f"Korean COVID-19 Confirmed Cases by Region (as of {target_date})",
-    hovermode='closest'
+    hovermode='closest',
+    margin=dict(l=20, r=20, t=40, b=20) # Tight margins
 )
 
 output_file = 'korea_covid_wordcloud.html'
