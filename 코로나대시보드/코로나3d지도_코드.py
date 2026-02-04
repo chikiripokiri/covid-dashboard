@@ -8,7 +8,7 @@ from scipy.ndimage import binary_dilation
 
 # 1. Inputs
 geojson_path = 'korea_provinces.json'
-csv_path = '../kr_regional_daily_excel.csv'
+csv_path = '../data/kr_regional_daily_excel.csv'
 
 # 2. Load Data
 print("Loading Data...")
