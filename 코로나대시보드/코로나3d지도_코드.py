@@ -154,7 +154,7 @@ fig.update_layout(
     scene={
         "xaxis": {"visible": False}, 
         "yaxis": {"visible": False},
-        "zaxis": {"title": "Level (1-18)", "visible": True},
+        "zaxis": {"title": "Level (1-18)", "visible": False},
         "aspectmode": "manual",
         "aspectratio": {"x": 1, "y": 1.85, "z": 0.5},
         "camera": {
@@ -165,6 +165,6 @@ fig.update_layout(
     margin=dict(l=0, r=0, b=0, t=50)
 )
 
-output_file = "korea_covid_surface_ver2.html"
+output_file = "코로나3d지도.html"
 fig.write_html(output_file)
 print(f"Saved to {output_file}")
