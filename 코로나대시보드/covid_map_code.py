@@ -180,7 +180,7 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
         * {{ box-sizing: border-box; }}
         body {{ 
             font-family: 'Noto Sans KR', Arial, sans-serif; 
-            margin: 0; padding: 10px; 
+            margin: 0; padding: 0; 
             background: #f4f4f9; 
             height: 100vh; 
             display: flex; 
@@ -188,37 +188,10 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
             align-items: center; 
             overflow: hidden; 
         }}
-        header {{ margin-bottom: 10px; text-align: center; flex-shrink: 0; }}
-        h1 {{ margin: 0; font-size: 1.5rem; color: #333; }}
-        
-        .controls {{ 
-            background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-            display: flex; gap: 20px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; justify-content: center;
-            flex-shrink: 0;
-            z-index: 20;
-        }}
-        .control-group {{ display: flex; flex-direction: column; gap: 3px; align-items: center; }}
-        .control-group label {{ font-weight: bold; font-size: 0.8rem; color: #555; }}
-        select, input[type="range"], input[type="date"] {{ padding: 2px; border: 1px solid #ddd; border-radius: 4px; }}
-        
-        .btn-group {{ display: flex; gap: 0; border: 1px solid #ccc; border-radius: 5px; overflow: hidden; }}
-        .btn-group button {{ 
-            border: none; padding: 5px 15px; cursor: pointer; background: #f9f9f9; font-size: 0.9rem; font-weight: bold; 
-            transition: background 0.2s;
-        }}
-        .btn-group button.active {{ background: #007bff; color: white; }}
-        .btn-group button:not(:last-child) {{ border-right: 1px solid #ccc; }}
-        
         #plot-container {{ 
-            flex: 1; 
             width: 100%; 
-            max-width: 1200px;
-            min-height: 0; 
-            background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+            height: 100%;
             position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
         }}
         #loading {{ 
             position: absolute; top:0; left:0; width:100%; height:100%; 
@@ -228,25 +201,6 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
     </style>
 </head>
 <body>
-
-    <header>
-        <h1>KOREA COVID-19 DASHBOARD</h1>
-    </header>
-    
-    <div class="controls">
-        <div class="control-group">
-            <label>Visualization Mode</label>
-            <div class="btn-group">
-                <button id="btn-3d" class="active" onclick="setMode('3d')">3D Confirmed</button>
-                <button id="btn-2d" onclick="setMode('2d')">2D Confirmed</button>
-            </div>
-        </div>
-        
-        <div class="control-group" style="width: 300px;">
-            <label>Date Selection: <span id="date-display">{init_date}</span></label>
-            <input type="range" id="date-slider" min="0" max="{len(dates)-1}" value="{len(dates)-1}" style="width: 100%;">
-        </div>
-    </div>
 
     <div id="plot-container">
         <div id="loading">Loading Data...</div>
@@ -267,20 +221,10 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
         const height = {HEIGHT};
         const CAP_NUM = 2500000;
         
-        // --- 2. State ---
-        let currentMode = '3d'; 
-        let currentIndex = dates.length - 1;
-        
-        const plotDiv = document.getElementById('plotly-div');
-        const slider = document.getElementById('date-slider');
-        const dateDisplay = document.getElementById('date-display');
-        const btn3d = document.getElementById('btn-3d');
-        const btn2d = document.getElementById('btn-2d');
-        const loading = document.getElementById('loading');
-
-        // --- 3. 3D Helper Functions ---
         const xCoords = Array.from({{length: width}}, (_, i) => {MIN_LON} + i * {RES_LON});
         const yCoords = Array.from({{length: height}}, (_, i) => {MAX_LAT} - i * {RES_LAT});
+
+        // --- 2. Helper Functions ---
         
         function build3DSurface(date) {{
             const levels = levelsData[date];
@@ -305,10 +249,69 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
             }}
             return z;
         }}
+        
+        function get2DViewDetails(date) {{
+             const vals = rawData[date];
+             let dailyMax = 0;
+             for(let v of vals) if(v > dailyMax) dailyMax = v;
+             const viewMax = (dailyMax > CAP_NUM) ? CAP_NUM : (dailyMax > 0 ? dailyMax : 1);
+             const text = regions.map((r, i) => `${{r}}: ${{vals[i]}}`);
+             return {{ z: vals, zmax: viewMax, text: text }};
+        }}
 
-        const layout3D = {{
-            title: 'COVID-19 Confirmed Cases (3D Level 1-15)',
-            scene: {{
+        // --- 3. Initial Render Prep ---
+        const initDate = dates[dates.length - 1];
+        
+        // Trace 0: 3D Surface
+        const z3d = build3DSurface(initDate);
+        const trace3d = {{
+            type: 'surface',
+            z: z3d,
+            x: xCoords,
+            y: yCoords,
+            colorscale: [
+                [0, "#6bb5ff"],
+                [0.277, "#b590b5"],
+                [1.0, "#ff6b6b"]
+            ],
+            cmin: 0, cmax: 15,
+            showscale: false,
+            contours: {{z: {{show: false, project: {{z: true}}}} }},
+            lighting: {{ambient: 0.6, roughness: 0.1, diffuse: 0.8, fresnel: 0.2, specular: 0.5}},
+            visible: true,
+            name: '3D'
+        }};
+        
+        // Trace 1: 2D Choropleth
+        const d2 = get2DViewDetails(initDate);
+        const trace2d = {{
+            type: 'choropleth',
+            locations: regions,
+            z: d2.z,
+            geojson: geojson,
+            featureidkey: 'properties.CTP_ENG_NM',
+            colorscale: 'Reds',
+            zmin: 0, zmax: d2.zmax,
+            text: d2.text,
+            hovertemplate: '%{{text}}<extra></extra>',
+            visible: false,
+            name: '2D'
+        }};
+
+        // Sliders config
+        const steps = dates.map(d => ({{
+            label: d,
+            method: 'skip', // Hijack in JS
+            args: [],
+            execute: false
+        }}));
+
+        // Layout
+        const layout = {{
+            title: `COVID-19 Confirmed Cases - ${{initDate}}`,
+            autosize: true,
+            margin: {{l:0, r:0, b:0, t:50}},
+            scene: {{ // 3D Scene
                 xaxis: {{visible: false}},
                 yaxis: {{visible: false}},
                 zaxis: {{title: 'Level', visible: false}},
@@ -316,117 +319,72 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
                 aspectratio: {{x: 1, y: 1.85, z: 0.5}},
                 camera: {{eye: {{x: 1.5, y: -1.5, z: 0.8}}}}
             }},
-            margin: {{l:0, r:0, b:20, t:50}},
-            autosize: true
-        }};
-        
-        const layout2D = {{
-            title: 'COVID-19 Confirmed Cases (2D)',
-            geo: {{fitbounds: 'locations', visible: false}},
-            margin: {{l:0, r:0, b:20, t:50}},
-            coloraxis: {{
+            geo: {{ // 2D Geo
+                fitbounds: 'locations', 
+                visible: false,
+                projection: {{type: 'mercator'}}
+            }},
+            coloraxis: {{ // Shared if needed, but we used trace specific
                 cmin: 0,
                 colorbar: {{len: 0.8, title: 'Cases'}} 
             }},
-            autosize: true
+            updatemenus: [{{
+                type: 'buttons',
+                direction: 'left',
+                pad: {{'r': 10, 't': 10}},
+                showactive: true,
+                x: 0, y: 1.1, xanchor: 'left', yanchor: 'top',
+                buttons: [
+                    {{
+                        label: '3D Confirmed',
+                        method: 'update',
+                        args: [{{'visible': [true, false]}}, {{'scene.visible': true, 'geo.visible': false}}] 
+                    }},
+                    {{
+                        label: '2D Confirmed',
+                        method: 'update',
+                        args: [{{'visible': [false, true]}}, {{'scene.visible': false, 'geo.visible': true}}] 
+                    }}
+                ]
+            }}],
+            sliders: [{{
+                active: dates.length - 1,
+                currentvalue: {{prefix: "Date: "}},
+                pad: {{t: 50}},
+                len: 0.6,
+                x: 0.2,
+                steps: steps
+            }}]
         }};
 
-        // --- 4. Main Rendering Logic ---
-        function render() {{
-            const date = dates[currentIndex];
-            dateDisplay.textContent = date;
-            
-            if (currentMode === '3d') {{
-                const zData = build3DSurface(date);
-                
-                const data3d = [{{
-                    type: 'surface',
-                    z: zData,
-                    x: xCoords,
-                    y: yCoords,
-                    colorscale: [
-                        [0, "#6bb5ff"],
-                        [0.277, "#b590b5"],
-                        [1.0, "#ff6b6b"]
-                    ],
-                    cmin: 0, cmax: 15,
-                    showscale: false,
-                    contours: {{z: {{show: false, usecolormap: true, highlightcolor: "white", project: {{z: true}}}} }},
-                    lighting: {{ambient: 0.6, roughness: 0.1, diffuse: 0.8, fresnel: 0.2, specular: 0.5}}
-                }}];
-                
-                const currentData = document.getElementById('plotly-div').data;
-                const isSameType = currentData && currentData[0] && currentData[0].type === 'surface';
-                
-                if (isSameType) {{
-                    Plotly.react('plotly-div', data3d, layout3D);
-                }} else {{
-                    Plotly.newPlot('plotly-div', data3d, layout3D, {{responsive: true}}).then(() => loading.style.display = 'none');
-                }}
-                
-            }} else {{
-                // 2D Mode: Raw Data with Dynamic Scaling
-                const vals = rawData[date];
-                
-                // Calculate Dynamic Max (Capped)
-                let dailyMax = 0;
-                for(let v of vals) if(v > dailyMax) dailyMax = v;
-                
-                const viewMax = (dailyMax > CAP_NUM) ? CAP_NUM : (dailyMax > 0 ? dailyMax : 1);
-
-                const data2d = [{{
-                    type: 'choropleth',
-                    locations: regions,
-                    z: vals,
-                    geojson: geojson,
-                    featureidkey: 'properties.CTP_ENG_NM',
-                    colorscale: 'Reds',
-                    zmin: 0, zmax: viewMax, // Dynamic ZMAX
-                    text: regions.map((r, i) => `${{r}}: ${{vals[i]}}`),
-                    hovertemplate: '%{{text}}<extra></extra>'
-                }}];
-                
-                const currentData = document.getElementById('plotly-div').data;
-                const isSameType = currentData && currentData[0] && currentData[0].type === 'choropleth';
-                
-                // Dynamically update layout coloraxis cmax
-                const thisLayout = {{
-                    ...layout2D, 
-                    title: `COVID-19 Confirmed Cases - ${{date}}`,
-                    coloraxis: {{ ...layout2D.coloraxis, cmax: viewMax }}
-                }};
-                
-                if (isSameType) {{
-                     Plotly.react('plotly-div', data2d, thisLayout);
-                }} else {{
-                     Plotly.newPlot('plotly-div', data2d, thisLayout, {{responsive: true}}).then(() => loading.style.display = 'none');
-                }}
-            }}
-        }}
-
-        window.setMode = (mode) => {{
-            currentMode = mode;
-            if (mode === '3d') {{
-                btn3d.classList.add('active');
-                btn2d.classList.remove('active');
-            }} else {{
-                btn2d.classList.add('active');
-                btn3d.classList.remove('active');
-            }}
-            loading.style.display = 'flex';
-            setTimeout(render, 50);
-        }};
+        Plotly.newPlot('plotly-div', [trace3d, trace2d], layout).then(() => {{
+            document.getElementById('loading').style.display = 'none';
+        }});
         
-        slider.addEventListener('input', (e) => {{
-            currentIndex = parseInt(e.target.value);
-            render();
+        // --- 4. Event Handling ---
+        const plotDiv = document.getElementById('plotly-div');
+        
+        plotDiv.on('plotly_sliderchange', function(e) {{
+            const date = e.step.label;
+            
+            // Generate Data
+            const newZ3d = build3DSurface(date);
+            const d2 = get2DViewDetails(date);
+            
+            // Update Data Only (Restyle) - Does not change visibility
+            Plotly.restyle('plotly-div', {{
+                z: [newZ3d, d2.z],
+                text: [null, d2.text], // Only map needs text
+                zmax: [null, d2.zmax]  // Only map needs zmax update
+            }}, [0, 1]);
+            
+            // Update Title
+            Plotly.relayout('plotly-div', {{title: `COVID-19 Confirmed Cases - ${{date}}`}});
         }});
         
         window.addEventListener('resize', () => {{
             Plotly.Plots.resize(plotDiv);
         }});
-
-        setTimeout(render, 100);
 
     </script>
 </body>
