@@ -22,21 +22,8 @@ RES_LAT = (MAX_LAT - MIN_LAT) / HEIGHT
 AFF_TRANS = transform.from_origin(MIN_LON, MAX_LAT, RES_LON, RES_LAT)
 
 # ---------------------------------------------------------
-# 2. Helpers from 3D Map Code
+# 2. Helpers
 # ---------------------------------------------------------
-def get_height_level(confirmed_cases):
-    """
-    Scale confirmed cases to height level (1-18).
-    """
-    if confirmed_cases < 500000:
-        return 1
-    elif confirmed_cases < 1000000:
-        return 2
-    elif confirmed_cases < 2500000:
-        return 3 + int((confirmed_cases - 1000000) // 100000)
-    else:
-        return 18
-
 def get_largest_polygon(geometry):
     """
     Keep only the largest polygon from a MultiPolygon (island filtering).
@@ -70,10 +57,6 @@ def load_data(csv_path, geojson_path):
     # Ensure necessary columns
     required_cols = {"date", "region", "death", "confirmed"}
     if not required_cols.issubset(df.columns):
-        # The file might have different columns or need cleaning.
-        # Based on previous files, 'death' is in death_map.py, 'confirmed' in 3d map.
-        # Let's check if they exist. If 'death' is missing (maybe separate files?), logic handles it.
-        # Assuming the CSV provided has both as per user context implies they effectively use the same source or similar.
         pass
 
     df['date'] = df['date'].astype(str)
@@ -82,11 +65,9 @@ def load_data(csv_path, geojson_path):
 
 def process_names_and_dates(df, geojson):
     # Extract canonical names from GeoJSON (ordering matters for the mask)
-    # We use CTP_ENG_NM as the key ID
     regions_order = [f["properties"]["CTP_ENG_NM"] for f in geojson["features"]]
-    region_kor_map = {f["properties"]["CTP_ENG_NM"]: f["properties"]["CTP_KOR_NM"] for f in geojson["features"]}
-
-    # Region Alias Map (from death_map.py) to unify CSV names to GeoJSON
+    
+    # Region Alias Map
     region_alias = {
         "Seoul": "Seoul", "Busan": "Busan", "Daegu": "Daegu", "Incheon": "Incheon",
         "Gwangju": "Gwangju", "Daejeon": "Daejeon", "Ulsan": "Ulsan", "Sejong": "Sejong-si",
@@ -95,7 +76,6 @@ def process_names_and_dates(df, geojson):
         "Jeonbuk": "Jeollabuk-do", "Jeonnam": "Jellanam-do",
         "Gyeongbuk": "Gyeongsangbuk-do", "Gyeongnam": "Gyeongsangnam-do",
         "Jeju": "Jeju-do",
-        # Korean inputs
         "서울": "Seoul", "부산": "Busan", "대구": "Daegu", "인천": "Incheon",
         "광주": "Gwangju", "대전": "Daejeon", "울산": "Ulsan", "세종": "Sejong-si",
         "세종특별자치시": "Sejong-si", "경기": "Gyeonggi-do", "경기도": "Gyeonggi-do",
@@ -110,66 +90,62 @@ def process_names_and_dates(df, geojson):
     }
 
     # Group by date
-    # We want two dicts: date -> [confirmed_levels], date -> [deaths]
-    # The arrays must be aligned with regions_order
-    
-    date_groups_confirmed = {}
-    date_groups_deaths = {}
+    date_groups_levels = {}
+    date_groups_raw = {}
     
     dates_sorted = sorted(df['date'].unique())
-    
     print("Processing daily data...")
+    
+    MAX_LEVEL = 15
+    CAP_CONFIRMED = 2500000
     
     for date in dates_sorted:
         day_df = df[df['date'] == date]
         
-        # Initialize counts
+        # 1. Aggregate Raw Counts
         conf_map = {r: 0 for r in regions_order}
-        death_map = {r: 0 for r in regions_order}
-        
         for _, row in day_df.iterrows():
             reg_raw = str(row['region'])
             reg = region_alias.get(reg_raw, reg_raw)
-            # Try appending -do or -si if not found (simple heuristics from death_map.py)
             if reg not in conf_map:
                 if f"{reg}-do" in conf_map: reg = f"{reg}-do"
                 elif f"{reg}-si" in conf_map: reg = f"{reg}-si"
             
             if reg in conf_map:
                 conf_map[reg] += int(row.get('confirmed', 0))
-                death_map[reg] += int(row.get('death', 0))
         
-        # Convert Confirmed to Level
-        levels = [get_height_level(conf_map[r]) for r in regions_order]
-        deaths = [death_map[r] for r in regions_order]
+        raw_vals = [conf_map[r] for r in regions_order]
         
-        date_groups_confirmed[date] = levels
-        date_groups_deaths[date] = deaths
+        # 2. Calculate Levels (Dynamic Relative Scaling)
+        day_max = max(raw_vals) if raw_vals else 0
+        reference_val = min(day_max, CAP_CONFIRMED)
+        
+        level_vals = []
+        for val in raw_vals:
+            if reference_val == 0:
+                lvl = 0
+            else:
+                ratio = val / reference_val
+                lvl = int(ratio * MAX_LEVEL)
+                
+                # Boundaries
+                if lvl < 1 and val > 0: lvl = 1
+                if lvl > MAX_LEVEL: lvl = MAX_LEVEL
+            
+            level_vals.append(lvl)
+        
+        date_groups_raw[date] = raw_vals
+        date_groups_levels[date] = level_vals
 
-    return regions_order, dates_sorted, date_groups_confirmed, date_groups_deaths
+    return regions_order, dates_sorted, date_groups_levels, date_groups_raw
 
 def generate_base_grid(geojson, regions_order):
-    """
-    Generates a grid (flattened for JS) where pixel values represent:
-    -1: Sea/Ignore
-    -2: Skirt (Elevation 0)
-    0..N: Region Index
-    """
     print("Generating 3D Base Grid...")
-    
-    # 1. Create a mask for each region
-    # We will use an integer grid.
-    # Initialize with -1 (Sea)
     grid = np.full(GRID_SHAPE, -1, dtype=np.int32)
     
     for idx, region_name in enumerate(regions_order):
-        # Find feature
         feature = next(f for f in geojson['features'] if f['properties']['CTP_ENG_NM'] == region_name)
         geom = get_largest_polygon(feature['geometry'])
-        
-        # Rasterize this single region
-        # We burn the value 'idx' into the grid where the polygon matches
-        # Note: 'all_touched' can be True or False. True makes it thicker.
         mask = features.rasterize(
             [(geom, 1)],
             out_shape=GRID_SHAPE,
@@ -177,15 +153,10 @@ def generate_base_grid(geojson, regions_order):
             fill=0,
             dtype='uint8'
         )
-        # Update main grid
         grid[mask == 1] = idx
 
-    # 2. Generate Skirt
-    # Identify valid pixels (>=0)
     valid_mask = grid >= 0
-    # Dilate to find shoreline
     shoreline_mask = binary_dilation(valid_mask, iterations=1) & ~valid_mask
-    # Set skirt pixels to -2
     grid[shoreline_mask] = -2
     
     return grid
@@ -193,21 +164,10 @@ def generate_base_grid(geojson, regions_order):
 # ---------------------------------------------------------
 # 4. HTML Generation
 # ---------------------------------------------------------
-def generate_html(output_path, regions_order, dates, confirmed_data, death_data, base_grid, geojson_str):
+def generate_html(output_path, regions_order, dates, levels_data, raw_data, base_grid, geojson_str):
     print("Generating HTML...")
-    
-    # Flatten base grid for efficient JSON embedding
-    # It's 500*600 = 300,000 items. 
     base_grid_flat = base_grid.flatten().tolist()
     
-    # Find global max for 2D map to set static color range or dynamic?
-    # death_map.py calculates global max.
-    all_deaths = []
-    for d_list in death_data.values():
-        all_deaths.extend(d_list)
-    max_death = max(all_deaths) if all_deaths else 1
-    
-    # Initial Date
     init_date = dates[-1]
     
     html_content = f"""<!DOCTYPE html>
@@ -226,7 +186,7 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            overflow: hidden; /* Prevent scrolling */
+            overflow: hidden; 
         }}
         header {{ margin-bottom: 10px; text-align: center; flex-shrink: 0; }}
         h1 {{ margin: 0; font-size: 1.5rem; color: #333; }}
@@ -250,10 +210,10 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         .btn-group button:not(:last-child) {{ border-right: 1px solid #ccc; }}
         
         #plot-container {{ 
-            flex: 1; /* Take remaining height */
+            flex: 1; 
             width: 100%; 
             max-width: 1200px;
-            min-height: 0; /* Important for flex child scaling */
+            min-height: 0; 
             background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
             position: relative;
             display: flex;
@@ -278,7 +238,7 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
             <label>Visualization Mode</label>
             <div class="btn-group">
                 <button id="btn-3d" class="active" onclick="setMode('3d')">3D Confirmed</button>
-                <button id="btn-2d" onclick="setMode('2d')">2D Deaths</button>
+                <button id="btn-2d" onclick="setMode('2d')">2D Confirmed</button>
             </div>
         </div>
         
@@ -297,20 +257,18 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         // --- 1. Data Injection ---
         const regions = {json.dumps(regions_order)};
         const dates = {json.dumps(dates)};
-        const confirmedData = {json.dumps(confirmed_data)}; // Date -> [Level array]
-        const deathData = {json.dumps(death_data)};         // Date -> [Death array]
+        const levelsData = {json.dumps(levels_data)}; // Date -> [Level array 1-15]
+        const rawData = {json.dumps(raw_data)};       // Date -> [Raw Count array]
         
-        // Base Grid for 3D: Flattened array 
-        // -1: Sea, -2: Skirt, 0+ Region Index
         const baseGrid = new Int8Array({json.dumps(base_grid_flat)}); 
         const geojson = {geojson_str};
         
         const width = {WIDTH};
         const height = {HEIGHT};
-        const maxDeath = {max_death};
+        const CAP_NUM = 2500000;
         
         // --- 2. State ---
-        let currentMode = '3d'; // '3d' or '2d'
+        let currentMode = '3d'; 
         let currentIndex = dates.length - 1;
         
         const plotDiv = document.getElementById('plotly-div');
@@ -325,7 +283,7 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         const yCoords = Array.from({{length: height}}, (_, i) => {MAX_LAT} - i * {RES_LAT});
         
         function build3DSurface(date) {{
-            const levels = confirmedData[date];
+            const levels = levelsData[date];
             if (!levels) return null;
             
             const z = [];
@@ -349,7 +307,7 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         }}
 
         const layout3D = {{
-            title: 'COVID-19 3D Confirmed Cases (Level 1-18)',
+            title: 'COVID-19 Confirmed Cases (3D Level 1-15)',
             scene: {{
                 xaxis: {{visible: false}},
                 yaxis: {{visible: false}},
@@ -363,12 +321,12 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         }};
         
         const layout2D = {{
-            title: 'COVID-19 Deaths (2D)',
+            title: 'COVID-19 Confirmed Cases (2D)',
             geo: {{fitbounds: 'locations', visible: false}},
             margin: {{l:0, r:0, b:20, t:50}},
             coloraxis: {{
-                cmin: 0, cmax: maxDeath, colorscale: 'Reds',
-                colorbar: {{len: 0.8, title: 'Deaths'}}
+                cmin: 0,
+                colorbar: {{len: 0.8, title: 'Cases'}} 
             }},
             autosize: true
         }};
@@ -391,9 +349,9 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
                         [0.277, "#b590b5"],
                         [1.0, "#ff6b6b"]
                     ],
-                    cmin: 0, cmax: 18,
+                    cmin: 0, cmax: 15,
                     showscale: false,
-                    contours: {{z: {{show: true, usecolormap: true, highlightcolor: "white", project: {{z: true}}}} }},
+                    contours: {{z: {{show: false, usecolormap: true, highlightcolor: "white", project: {{z: true}}}} }},
                     lighting: {{ambient: 0.6, roughness: 0.1, diffuse: 0.8, fresnel: 0.2, specular: 0.5}}
                 }}];
                 
@@ -407,8 +365,15 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
                 }}
                 
             }} else {{
-                // 2D Mode
-                const vals = deathData[date];
+                // 2D Mode: Raw Data with Dynamic Scaling
+                const vals = rawData[date];
+                
+                // Calculate Dynamic Max (Capped)
+                let dailyMax = 0;
+                for(let v of vals) if(v > dailyMax) dailyMax = v;
+                
+                const viewMax = (dailyMax > CAP_NUM) ? CAP_NUM : (dailyMax > 0 ? dailyMax : 1);
+
                 const data2d = [{{
                     type: 'choropleth',
                     locations: regions,
@@ -416,7 +381,7 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
                     geojson: geojson,
                     featureidkey: 'properties.CTP_ENG_NM',
                     colorscale: 'Reds',
-                    zmin: 0, zmax: maxDeath,
+                    zmin: 0, zmax: viewMax, // Dynamic ZMAX
                     text: regions.map((r, i) => `${{r}}: ${{vals[i]}}`),
                     hovertemplate: '%{{text}}<extra></extra>'
                 }}];
@@ -424,7 +389,12 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
                 const currentData = document.getElementById('plotly-div').data;
                 const isSameType = currentData && currentData[0] && currentData[0].type === 'choropleth';
                 
-                const thisLayout = {{...layout2D, title: `COVID-19 Deaths - ${{date}}`}};
+                // Dynamically update layout coloraxis cmax
+                const thisLayout = {{
+                    ...layout2D, 
+                    title: `COVID-19 Confirmed Cases - ${{date}}`,
+                    coloraxis: {{ ...layout2D.coloraxis, cmax: viewMax }}
+                }};
                 
                 if (isSameType) {{
                      Plotly.react('plotly-div', data2d, thisLayout);
@@ -434,7 +404,6 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
             }}
         }}
 
-        // --- 5. Event Listeners ---
         window.setMode = (mode) => {{
             currentMode = mode;
             if (mode === '3d') {{
@@ -453,7 +422,6 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
             render();
         }});
         
-        // Handle Resize
         window.addEventListener('resize', () => {{
             Plotly.Plots.resize(plotDiv);
         }});
@@ -469,43 +437,26 @@ def generate_html(output_path, regions_order, dates, confirmed_data, death_data,
         f.write(html_content)
     print(f"Saved to {output_path}")
 
-# ---------------------------------------------------------
-# Main
-# ---------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Create Integrated 3D/2D Dashboard")
-    parser.add_argument("--output", default="Start_Covid_Dashboard.html", help="Output HTML filename")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default="Start_Covid_Dashboard.html")
     args = parser.parse_args()
 
-    # Paths (Assumed relative to script or specific structure)
     script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parent # Assuming script is in a subdir like '코로나대시보드'
-    
-    # Adjust as per user's file locations in prompt
-    # User file: /Users/parkhyunsik/파이썬/코로나대시보드_팀용/코로나대시보드/death_map.py
-    # Data likely at ../data/kr_regional_daily_excel.csv
+    repo_root = script_dir.parent
     
     geojson_path = script_dir / 'korea_provinces.json'
     csv_path = repo_root / 'data' / 'kr_regional_daily_excel.csv'
     
     if not csv_path.exists():
-        # Fallback check
         csv_path = script_dir.parent / 'data' / 'kr_regional_daily_excel.csv'
         
     print(f"CSV Path: {csv_path}")
-    print(f"GeoJSON Path: {geojson_path}")
     
-    # 1. Load Data
     df, geojson, geojson_str = load_data(csv_path, geojson_path)
-    
-    # 2. Process Data
-    regions_order, dates, conf_data, death_data = process_names_and_dates(df, geojson)
-    
-    # 3. Generate Base Grid
+    regions_order, dates, levels_data, raw_data = process_names_and_dates(df, geojson)
     base_grid = generate_base_grid(geojson, regions_order)
-    
-    # 4. Generate HTML
-    generate_html(script_dir / args.output, regions_order, dates, conf_data, death_data, base_grid, geojson_str)
+    generate_html(script_dir / args.output, regions_order, dates, levels_data, raw_data, base_grid, geojson_str)
 
 if __name__ == "__main__":
     main()
