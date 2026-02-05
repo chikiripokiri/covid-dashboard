@@ -164,11 +164,151 @@ def generate_base_grid(geojson, regions_order):
 # ---------------------------------------------------------
 # 4. HTML Generation
 # ---------------------------------------------------------
-def generate_html(output_path, regions_order, dates, levels_data, raw_data, base_grid, geojson_str):
+def generate_html(output_path, regions_order, dates, levels_data, raw_data, base_grid, geojson, geojson_str):
     print("Generating HTML...")
-    base_grid_flat = base_grid.flatten().tolist()
-    
+    base_grid_flat = base_grid.flatten()
     init_date = dates[-1]
+    
+    CAP_NUM = 2500000
+    
+    # --- Python-side Initial Data Construction ---
+    
+    # X, Y Coords
+    x_coords = np.linspace(MIN_LON, MAX_LON, WIDTH)
+    y_coords = np.linspace(MAX_LAT, MIN_LAT, HEIGHT)
+    
+    # 1. Build Initial 3D Surface Data (Python equivalent of JS build3DSurface)
+    levels = np.array(levels_data[init_date])
+    # Create Z matrix initialized with NaNs
+    z_matrix = np.full(base_grid.shape, np.nan)
+    
+    # -2 is sea/boundary (0 height), >=0 is region index (get level)
+    # Using vectorized operations for speed
+    mask_region = base_grid >= 0
+    mask_sea = base_grid == -2
+    
+    z_matrix[mask_sea] = 0
+    z_matrix[mask_region] = levels[base_grid[mask_region]]
+    
+    # Plotly expects list of lists for Surface Z
+    z_list = z_matrix.tolist()
+    
+    trace3d = {
+        "type": "surface",
+        "z": z_list,
+        "x": x_coords.tolist(),
+        "y": y_coords.tolist(),
+        "colorscale": [
+            [0, "#6bb5ff"],
+            [0.4, "#b590b5"],
+            [1.0, "#ff6b6b"]
+        ],
+        "cmin": 0, "cmax": 15,
+        "showscale": False,
+        "contours": {"z": {"show": False, "project": {"z": True}}},
+        "lighting": {"ambient": 0.6, "roughness": 0.1, "diffuse": 0.8, "fresnel": 0.2, "specular": 0.5},
+        "visible": True,
+        "name": "3D"
+    }
+
+    # 2. Build Initial 2D Choropleth Data
+    raw_vals = raw_data[init_date]
+    day_max = max(raw_vals) if raw_vals else 0
+    view_max = min(day_max, CAP_NUM) if day_max > CAP_NUM else (day_max if day_max > 0 else 1)
+    text_list = [f"{r}: {v}" for r, v in zip(regions_order, raw_vals)]
+    
+    trace2d = {
+        "type": "choropleth",
+        "locations": regions_order,
+        "z": raw_vals,
+        "geojson": geojson,
+        "featureidkey": "properties.CTP_ENG_NM",
+        "colorscale": "Reds",
+        "zmin": 0, "zmax": view_max,
+        "text": text_list,
+        "hovertemplate": "%{text}<extra></extra>",
+        "visible": False,
+        "name": "2D"
+    }
+    
+    initial_data = [trace3d, trace2d]
+
+    # --- Python-side Layout Configuration ---
+    
+    # Update Menus (Buttons)
+    updatemenus = [
+        {
+            "type": "buttons",
+            "direction": "left",
+            "pad": {"r": 10, "t": 10},
+            "showactive": True,
+            "x": 0, "y": 1.1, "xanchor": "left", "yanchor": "top",
+            "buttons": [
+                {
+                    "label": "3D Confirmed",
+                    "method": "update",
+                    "args": [{"visible": [True, False]}, {"scene.visible": True, "geo.visible": False}]
+                },
+                {
+                    "label": "2D Confirmed",
+                    "method": "update",
+                    "args": [{"visible": [False, True]}, {"scene.visible": False, "geo.visible": True}]
+                }
+            ]
+        }
+    ]
+    
+    # Sliders
+    steps = [
+        {
+            "label": d,
+            "method": "skip", # Hijack in JS
+            "args": [],
+            "execute": False
+        }
+        for d in dates
+    ]
+    
+    sliders = [
+        {
+            "active": len(dates) - 1,
+            "currentvalue": {"prefix": "Date: "},
+            "pad": {"t": 50},
+            "len": 0.6,
+            "x": 0.2,
+            "steps": steps
+        }
+    ]
+    
+    layout = {
+        "title": f"COVID-19 Confirmed Cases - {init_date}",
+        "autosize": True,
+        "margin": {"l": 0, "r": 0, "b": 0, "t": 50},
+        "scene": { # 3D Scene
+            "xaxis": {"visible": False},
+            "yaxis": {"visible": False},
+            "zaxis": {"title": "Level", "visible": False},
+            "aspectmode": "manual",
+            "aspectratio": {"x": 1, "y": 1.85, "z": 0.5},
+            "camera": {"eye": {"x": 1.5, "y": -1.5, "z": 0.8}}
+        },
+        "geo": { # 2D Geo
+            "fitbounds": "locations", 
+            "visible": False,
+            "projection": {"type": "mercator"} # Kept as requested
+        },
+        "coloraxis": { 
+            "cmin": 0,
+            "colorbar": {"len": 0.8, "title": "Cases"} 
+        },
+        "updatemenus": updatemenus,
+        "sliders": sliders
+    }
+
+    # Serialize to JSON for Injection
+    initial_data_json = json.dumps(initial_data)
+    layout_json = json.dumps(layout)
+    base_grid_flat_json = json.dumps(base_grid_flat.tolist()) # Flattened list for JS Array
     
     html_content = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -209,23 +349,30 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
 
     <script>
         // --- 1. Data Injection ---
+        // Pre-computed initial state form Python
+        const initialData = {initial_data_json};
+        const initialLayout = {layout_json};
+        
+        // Data needed for dynamic updates
         const regions = {json.dumps(regions_order)};
         const dates = {json.dumps(dates)};
         const levelsData = {json.dumps(levels_data)}; // Date -> [Level array 1-15]
         const rawData = {json.dumps(raw_data)};       // Date -> [Raw Count array]
         
-        const baseGrid = new Int8Array({json.dumps(base_grid_flat)}); 
-        const geojson = {geojson_str};
+        const baseGrid = new Int8Array({base_grid_flat_json}); 
         
         const width = {WIDTH};
         const height = {HEIGHT};
-        const CAP_NUM = 2500000;
+        const CAP_NUM = {CAP_NUM};
         
-        const xCoords = Array.from({{length: width}}, (_, i) => {MIN_LON} + i * {RES_LON});
-        const yCoords = Array.from({{length: height}}, (_, i) => {MAX_LAT} - i * {RES_LAT});
-
-        // --- 2. Helper Functions ---
+        // --- 2. Initial Render & Helper Functions ---
         
+        // Render initial plot immediately
+        Plotly.newPlot('plotly-div', initialData, initialLayout).then(() => {{
+            document.getElementById('loading').style.display = 'none';
+        }});
+        
+        // JS Helper to build surface for updates
         function build3DSurface(date) {{
             const levels = levelsData[date];
             if (!levels) return null;
@@ -258,110 +405,8 @@ def generate_html(output_path, regions_order, dates, levels_data, raw_data, base
              const text = regions.map((r, i) => `${{r}}: ${{vals[i]}}`);
              return {{ z: vals, zmax: viewMax, text: text }};
         }}
-
-        // --- 3. Initial Render Prep ---
-        const initDate = dates[dates.length - 1];
         
-        // Trace 0: 3D Surface
-        const z3d = build3DSurface(initDate);
-        const trace3d = {{
-            type: 'surface',
-            z: z3d,
-            x: xCoords,
-            y: yCoords,
-            colorscale: [
-                [0, "#6bb5ff"],
-                [0.277, "#b590b5"],
-                [1.0, "#ff6b6b"]
-            ],
-            cmin: 0, cmax: 15,
-            showscale: false,
-            contours: {{z: {{show: false, project: {{z: true}}}} }},
-            lighting: {{ambient: 0.6, roughness: 0.1, diffuse: 0.8, fresnel: 0.2, specular: 0.5}},
-            visible: true,
-            name: '3D'
-        }};
-        
-        // Trace 1: 2D Choropleth
-        const d2 = get2DViewDetails(initDate);
-        const trace2d = {{
-            type: 'choropleth',
-            locations: regions,
-            z: d2.z,
-            geojson: geojson,
-            featureidkey: 'properties.CTP_ENG_NM',
-            colorscale: 'Reds',
-            zmin: 0, zmax: d2.zmax,
-            text: d2.text,
-            hovertemplate: '%{{text}}<extra></extra>',
-            visible: false,
-            name: '2D'
-        }};
-
-        // Sliders config
-        const steps = dates.map(d => ({{
-            label: d,
-            method: 'skip', // Hijack in JS
-            args: [],
-            execute: false
-        }}));
-
-        // Layout
-        const layout = {{
-            title: `COVID-19 Confirmed Cases - ${{initDate}}`,
-            autosize: true,
-            margin: {{l:0, r:0, b:0, t:50}},
-            scene: {{ // 3D Scene
-                xaxis: {{visible: false}},
-                yaxis: {{visible: false}},
-                zaxis: {{title: 'Level', visible: false}},
-                aspectmode: 'manual',
-                aspectratio: {{x: 1, y: 1.85, z: 0.5}},
-                camera: {{eye: {{x: 1.5, y: -1.5, z: 0.8}}}}
-            }},
-            geo: {{ // 2D Geo
-                fitbounds: 'locations', 
-                visible: false,
-                projection: {{type: 'mercator'}}
-            }},
-            coloraxis: {{ // Shared if needed, but we used trace specific
-                cmin: 0,
-                colorbar: {{len: 0.8, title: 'Cases'}} 
-            }},
-            updatemenus: [{{
-                type: 'buttons',
-                direction: 'left',
-                pad: {{'r': 10, 't': 10}},
-                showactive: true,
-                x: 0, y: 1.1, xanchor: 'left', yanchor: 'top',
-                buttons: [
-                    {{
-                        label: '3D Confirmed',
-                        method: 'update',
-                        args: [{{'visible': [true, false]}}, {{'scene.visible': true, 'geo.visible': false}}] 
-                    }},
-                    {{
-                        label: '2D Confirmed',
-                        method: 'update',
-                        args: [{{'visible': [false, true]}}, {{'scene.visible': false, 'geo.visible': true}}] 
-                    }}
-                ]
-            }}],
-            sliders: [{{
-                active: dates.length - 1,
-                currentvalue: {{prefix: "Date: "}},
-                pad: {{t: 50}},
-                len: 0.6,
-                x: 0.2,
-                steps: steps
-            }}]
-        }};
-
-        Plotly.newPlot('plotly-div', [trace3d, trace2d], layout).then(() => {{
-            document.getElementById('loading').style.display = 'none';
-        }});
-        
-        // --- 4. Event Handling ---
+        // --- 3. Event Handling ---
         const plotDiv = document.getElementById('plotly-div');
         
         plotDiv.on('plotly_sliderchange', function(e) {{
@@ -414,7 +459,8 @@ def main():
     df, geojson, geojson_str = load_data(csv_path, geojson_path)
     regions_order, dates, levels_data, raw_data = process_names_and_dates(df, geojson)
     base_grid = generate_base_grid(geojson, regions_order)
-    generate_html(script_dir / args.output, regions_order, dates, levels_data, raw_data, base_grid, geojson_str)
+    # Pass geojson object too for python trace construction
+    generate_html(script_dir / args.output, regions_order, dates, levels_data, raw_data, base_grid, geojson, geojson_str)
 
 if __name__ == "__main__":
     main()
