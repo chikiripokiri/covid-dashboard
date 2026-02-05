@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
+
 
 # 데이터 전처리
 # 한국 종합 데이터
@@ -42,15 +44,58 @@ print(df_Daegu.head())
 
 
 # 한국 전체 신규 확진자수 시각화
-fig = px.line(df_total, x="date", y="new_confirmed",
-              title="한국 전체 일별 신규 확진자수",
-              labels={"date":"날짜", "new_confirmed":"신규 확진자 수"},
-              log_y=True,) # y축 로그스케일
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df_total.date, y=df_total.new_confirmed,
+                         mode='markers', name='한국 전체 신규 확진자 수',))
 # 대구 지역 신규 확진자수 시각화
 fig.add_trace(go.Scatter(x=df_Daegu.date, y=df_Daegu.new_confirmed,
-                         mode='lines', name='대구 지역 신규 확진자 수')) 
-fig.show()
+                         mode='markers', name='대구 지역 신규 확진자 수')) 
 
+# 그래프 레이아웃 설정
+fig.update_layout(
+    # 타이틀,축 지정
+    title = "한국 전체, 대구 일별 신규 확진자수",
+    xaxis_title="날짜",
+    yaxis_title="신규 확진자 수",
+    yaxis_type="log", # y축 로그스케일
+    
+    # legend 레이아웃 지정
+    legend_x=0.85,
+    legend_y=0.95,
+    legend_bordercolor="Black",
+    legend_borderwidth=2,
+    
+    # hover 레이아웃 지정
+    hovermode="x unified",# 날짜에 따라서 hovermode 작동
+    
+    # 버튼 생성
+    updatemenus=[
+        dict(
+            type = "buttons",
+            buttons = list([
+                dict(
+                    label = "한국 전체 신규 확진자 수",
+                    method = "update",
+                    args = [{"visible": [True, False]},
+                            {"title": "한국 전체 신규 확진자 수"}]
+                ),
+                dict(
+                    label = "한국 전체, 대구 일별 확진자 수",
+                    method = "update",
+                    args = [{"visible": [True, True]},
+                            {"title": "한국 전체, 대구 일별 신규 확진자수"}]
+                )
+            ])
+        )
+    ]
+    
+)
+# 모드 바 편집 - 그림그리는거 추가
+fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
+                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
+
+
+#fig.write_html("covid_teamdashboard.html")
 
 
 
