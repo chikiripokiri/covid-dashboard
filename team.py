@@ -91,10 +91,44 @@ fig.update_layout(
     
 )
 # 모드 바 편집 - 그림그리는거 추가
-#fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
-#                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
+fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
+                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
 
-fig.write_html("covid_teamdashboard.html")
+
+
+
+# 지도 html 파일과 그래프 html 파일을 합쳐서 하나의 대시보드 html 파일로 만들기
+line_html = fig.to_html(full_html=False, include_plotlyjs="cdn",default_height="85vh")   # 원하는 만큼 조절 (예: 80vh~90vh)
+map_file = "코로나대시보드/covid_map.html"  # 현식님 지도 HTML 파일명으로 맞추기
+
+final_html = f"""
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>COVID Dashboard</title>
+  <style>
+    body {{ margin:0; padding:10px; background:#f4f4f9; font-family: Arial, sans-serif; }}
+    .bar {{ display:flex; gap:8px; margin-bottom:10px; }}
+    .bar button {{
+      padding:8px 12px; border:1px solid #ccc; border-radius:6px;
+      background:white; cursor:pointer; font-weight:600;
+    }}
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button onclick="window.open('{map_file}', '_blank')">confirmed_maps</button>
+  </div>
+
+  {line_html}
+</body>
+</html>
+"""
+
+with open("covid_teamdashboard.html", "w", encoding="utf-8") as f:
+    f.write(final_html)
+
 
 
 
