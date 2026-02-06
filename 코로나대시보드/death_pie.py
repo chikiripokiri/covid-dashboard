@@ -1,10 +1,19 @@
+"""
+Weekly regional confirmed-case share pie chart with week selector.
+
+Usage:
+    python 코로나대시보드/death_pie.py
+
+Output:
+    코로나대시보드/korea_covid_weekly_confirmed_pie.html
+"""
+
 from pathlib import Path
 import argparse
 import json
 import sys
 
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
 
@@ -13,86 +22,87 @@ def load_data(csv_path: Path) -> pd.DataFrame:
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV not found: {csv_path}")
     df = pd.read_csv(csv_path)
-    required = {"date", "region", "death"}
+    required = {"date", "region", "confirmed"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Missing columns in CSV: {', '.join(sorted(missing))}")
     return df
 
 
-def build_html(df: pd.DataFrame, initial_date: str, output_file: Path) -> Path:
-    # Normalize dates
+def build_html(df: pd.DataFrame, output_file: Path) -> Path:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"].astype(str), format="%Y%m%d")
 
-    # Colors per region (stable)
-    regions = sorted(df["region"].unique())
-    palette = px.colors.qualitative.Set3 + px.colors.qualitative.Plotly
-    if len(palette) < len(regions):
-        palette *= (len(regions) // len(palette) + 1)
-    color_map = dict(zip(regions, palette))
+    # Week start (Monday) and labels
+    df["week_start"] = df["date"] - pd.to_timedelta(df["date"].dt.weekday, unit="d")
+    df["week_end"] = df["week_start"] + pd.Timedelta(days=6)
+    df["week_key"] = df["week_start"].dt.strftime("%Y%m%d")
+    df["week_display"] = (
+        df["week_start"].dt.year.astype(str)
+        + "년 "
+        + df["week_start"].dt.month.astype(str)
+        + "월 "
+        + (((df["week_start"].dt.day - 1) // 7) + 1).astype(str)
+        + "째주"
+    )
+    df["week_range"] = df["week_start"].dt.strftime("%Y-%m-%d") + "~" + df["week_end"].dt.strftime("%Y-%m-%d")
 
-    # Map date -> data (avoid include_groups warning by iterating manually)
+    regions = sorted(df["region"].unique())
+
+    # 단일 고정 팔레트 (이외 지역은 회색)
+    fixed_colors = {
+        "Daegu": "#1f77b4",      # blue
+        "Gyeonggi": "#d62728",   # red
+        "Seoul": "#2ca02c",      # green
+        "Busan": "#9467bd",
+        "Incheon": "#8c564b",
+        "Gwangju": "#e377c2",
+        "Daejeon": "#7f7f7f",
+        "Ulsan": "#bcbd22",
+        "Sejong": "#17becf",
+        "Gyeongbuk": "#aec7e8",
+        "Gyeongnam": "#ff9896",
+        "Chungbuk": "#98df8a",
+        "Chungnam": "#c5b0d5",
+        "Gangwon": "#c49c94",
+        "Jeonbuk": "#f7b6d2",
+        "Jeonnam": "#dbdb8d",
+        "Jeju": "#9edae5",
+        "Quarantine": "#c7c7c7",
+    }
+    color_map = {region: fixed_colors.get(region, "#999999") for region in regions}
+
     data_map = {}
-    for date, g in df.groupby("date", sort=True):
-        g_sorted = g.sort_values("death", ascending=False)
-        iso = pd.to_datetime(date).date().isoformat()
-        data_map[iso] = {
-            "labels": g_sorted["region"].tolist(),
-            "values": g_sorted["death"].tolist(),
-            "colors": [color_map[r] for r in g_sorted["region"]],
+    for wk, g in df.groupby("week_key"):
+        g_sum = g.groupby("region")["confirmed"].sum()
+        values = [int(g_sum.get(r, 0)) for r in regions]
+        data_map[wk] = {
+            "labels": regions,
+            "values": values,
+            "display_text": g["week_display"].iloc[0],
+            "range_text": g["week_range"].iloc[0],
         }
 
-    dates_sorted = sorted(data_map.keys())
-    earliest = dates_sorted[0]
-    latest = dates_sorted[-1]
+    weeks_sorted = sorted(data_map.keys())
+    if not weeks_sorted:
+        raise ValueError("No data to plot.")
+    nonzero_weeks = [w for w in weeks_sorted if sum(data_map[w]["values"]) > 0]
+    start_week = nonzero_weeks[0] if nonzero_weeks else weeks_sorted[0]
+    init = data_map[start_week]
 
-    # Initial date: prefer first date with deaths>0 to avoid empty pie; fallback to requested
-    initial_iso = pd.to_datetime(initial_date, format="%Y%m%d").date().isoformat()
-    if initial_iso not in data_map:
-        raise ValueError(f"No data for date {initial_iso}.")
-    nonzero_dates = [d for d in dates_sorted if sum(data_map[d]["values"]) > 0]
-    start_iso = nonzero_dates[0] if nonzero_dates else initial_iso
+    start_week_json = json.dumps(start_week)
 
-    init = data_map[start_iso]
-    fig = go.Figure(
-        data=[
-            go.Pie(
-                labels=init["labels"],
-                values=init["values"],
-                marker=dict(colors=init["colors"]),
-                hole=0.2,
-                textinfo="label+percent",
-                pull=0.03,
-                hovertemplate="%{label}<br>Deaths: %{value}<extra></extra>",
-                scalegroup="all",  # keep radius consistent across updates
-            )
-        ]
-    )
-    fig.update_layout(
-        title="COVID-19 Deaths by Region",
-        legend_title_text="Region",
-        margin=dict(l=20, r=20, t=40, b=20),
-        height=600,
-        width=600,
-        uniformtext_mode="hide",
+    options_html = "\n".join(
+        f'<option value="{wk}" {"selected" if wk==start_week else ""}>{data_map[wk]["display_text"]}</option>'
+        for wk in weeks_sorted
     )
 
-    # Plotly div+script (no full HTML)
-    plot_html = pio.to_html(
-        fig,
-        include_plotlyjs="inline",
-        full_html=False,
-        default_width="100%",
-        default_height="100%",
-    )
-
-    # Compose custom HTML with date picker
     custom_html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>COVID-19 사망자 파이차트 (날짜 선택)</title>
+  <title>주간 지역별 확진자 비율</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <style>
     body {{ font-family: Arial, sans-serif; display:flex; flex-direction:column; align-items:center; gap:12px; margin:16px; }}
     .controls {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
@@ -101,67 +111,72 @@ def build_html(df: pd.DataFrame, initial_date: str, output_file: Path) -> Path:
 </head>
 <body>
   <div class="controls">
-    <label for="datePicker">날짜 선택:</label>
-    <input type="date" id="datePicker" min="{earliest}" max="{latest}" value="{start_iso}">
-    <span id="currentDate">{start_iso}</span>
-    <span id="status" style="color:#d33;font-weight:600;display:none;">해당 날짜는 사망자가 0명입니다.</span>
+    <label for="weekSelect">주 선택:</label>
+    <select id="weekSelect">
+      {options_html}
+    </select>
+    <span id="rangeWeek">({data_map[start_week]["range_text"]})</span>
+    <span id="status" style="color:#d33;font-weight:600;display:none;">해당 주는 확진자가 0명입니다.</span>
   </div>
   <div id="chart-container">
-    {plot_html}
+    <div id="chart"></div>
   </div>
   <script>
+    const colorMap = {json.dumps(color_map)};
     const dataMap = {json.dumps(data_map)};
-    const dateInput = document.getElementById('datePicker');
-    const dateLabel = document.getElementById('currentDate');
+    const startWeek = {start_week_json};
+    const weekSelect = document.getElementById('weekSelect');
+    const rangeLabel = document.getElementById('rangeWeek');
     const status = document.getElementById('status');
-    const plotDiv = document.querySelector('#chart-container').firstElementChild;
+    const plotDiv = document.getElementById('chart');
 
-    function updateChart(isoDate) {{
-      const entry = dataMap[isoDate];
+    function updateChart(weekKey) {{
+      const entry = dataMap[weekKey];
       if (!entry) return;
       const total = entry.values.reduce((a,b)=>a+b,0);
       status.style.display = total === 0 ? 'inline' : 'none';
 
-      // Filter out zero slices to avoid collapsed labels
-      const filtered = entry.values.map((v,i)=>({{v,i}})).filter(it => it.v > 0);
-      const labels = filtered.length ? filtered.map(it => entry.labels[it.i]) : ['No deaths'];
-      const values = filtered.length ? filtered.map(it => entry.values[it.i]) : [1];
-      const colors = filtered.length ? filtered.map(it => entry.colors[it.i]) : ['#cccccc'];
+      const sorted = entry.values
+        .map((v,i)=>({{v,i,label: entry.labels[i]}}))
+        .sort((a,b)=>b.v - a.v);
+      const nonZero = sorted.filter(it => it.v > 0);
+      const labels = nonZero.length ? nonZero.map(it => it.label) : ['No cases'];
+      const values = nonZero.length ? nonZero.map(it => it.v) : [1];
+      const colors = nonZero.length ? nonZero.map(it => colorMap[it.label] || '#999999') : ['#cccccc'];
 
-      // Hide labels only for very small slices (<5% of total) to avoid overlap
-      const tot = values.reduce((a,b)=>a+b,0) || 1;
-      const text = values.map((v,i)=> (v/tot) >= 0.05 ? `${{labels[i]}}<br>${{(v/tot*100).toFixed(1)}}%` : '');
+      const threshold = 0.12;
+      const text = values.map((v,i)=> (i < 4 || (v/total) >= threshold) ? labels[i] : '');
 
-      Plotly.react(plotDiv, [{{ 
+      Plotly.react(plotDiv, [{{
         type: 'pie',
         labels: labels,
         values: values,
         marker: {{color: colors}},
         hole: 0.2,
         text: text,
-        textinfo: 'text',
+        textinfo: 'text+percent',
         textposition: 'inside',
-        hovertemplate: '%{{label}}<br>Deaths: %{{value}}<extra></extra>',
-        pull: 0.02,
+        textfont: {{size: 50}},
+        pull: 0.03,
         scalegroup: 'all',
-        insidetextorientation: 'radial'
-      }}], {{ 
-        title: 'COVID-19 Deaths by Region',
+        hovertemplate: '%{{label}}<br>Confirmed: %{{value}}<extra></extra>',
+        sort: false
+      }}], {{
+        title: `Weekly Confirmed Share by Region - ${{entry.display_text}} (${{entry.range_text}})`,
         legend: {{title: {{text: 'Region'}}}},
         margin: {{l:20,r:20,t:40,b:20}},
-        height: 600,
-        width: 600,
-        uniformtext: {{mode: 'hide'}}
+        height: 700,
+        width: 700,
+        uniformtext: {{mode: 'show', minsize: 14}}
       }}, {{responsive: true}});
-      dateLabel.textContent = isoDate;
+      rangeLabel.textContent = `(${{entry.range_text}})`;
     }}
 
-    dateInput.addEventListener('change', (e) => {{
+    weekSelect.addEventListener('change', (e) => {{
       updateChart(e.target.value);
     }});
 
-    dateInput.value = "{start_iso}";
-    updateChart("{start_iso}");
+    updateChart(startWeek);
   </script>
 </body>
 </html>
@@ -172,25 +187,18 @@ def build_html(df: pd.DataFrame, initial_date: str, output_file: Path) -> Path:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Plot deaths by region as a pie chart with calendar picker.")
-    parser.add_argument(
-        "--date",
-        type=int,
-        default=None,
-        help="Initial date in YYYYMMDD (default: first date in CSV).",
-    )
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Weekly regional confirmed-case share pie chart.")
+    parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
     data_csv = repo_root / "data" / "kr_regional_daily_excel.csv"
-    output_file = script_dir / "korea_covid_death_pie.html"
+    output_file = script_dir / "korea_covid_weekly_confirmed_pie.html"
 
     df = load_data(data_csv)
-    initial_date = str(args.date or int(df["date"].min()))
 
     try:
-        saved = build_html(df, initial_date, output_file)
+        saved = build_html(df, output_file)
     except (FileNotFoundError, ValueError) as e:
         print(e, file=sys.stderr)
         sys.exit(1)
