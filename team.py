@@ -91,15 +91,26 @@ fig.update_layout(
     ]
 )
 # 모드 바 편집 - 그림그리는거 추가
-fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
-                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
+"""fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
+                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?"""
 
 
 
 
 # 지도 html 파일과 그래프 html 파일을 합쳐서 하나의 대시보드 html 파일로 만들기
-line_html = fig.to_html(full_html=False, include_plotlyjs="cdn",default_height="85vh")   # 원하는 만큼 조절 (예: 80vh~90vh)
-map_file = "코로나대시보드/covid_map.html"  # 현식님 지도 HTML 파일명으로 맞추기
+line_html = fig.to_html(
+    full_html=False,
+    include_plotlyjs="cdn",
+    default_height="85vh",
+    config={'modeBarButtonsToAdd': [
+        'drawline','drawopenpath','drawclosedpath',
+        'drawcircle','drawrect','eraseshape'
+    ]}
+)
+
+
+map_file = "코로나대시보드/covid_map.html"          # 기존 버튼
+other_file = "코로나대시보드/other_page.html"       # ✅ 추가할 버튼(여기에 새 html 경로 넣기)
 
 final_html = f"""
 <!doctype html>
@@ -119,6 +130,7 @@ final_html = f"""
 <body>
   <div class="bar">
     <button onclick="window.open('{map_file}', '_blank')">confirmed_maps</button>
+    <button onclick="window.open('{other_file}', '_blank')">other_page</button>  <!-- ✅ 추가 -->
   </div>
 
   {line_html}
