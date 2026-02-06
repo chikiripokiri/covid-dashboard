@@ -91,11 +91,10 @@ fig.update_layout(
     
 )
 # 모드 바 편집 - 그림그리는거 추가
-fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
-                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
+#fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
+#                             'drawcircle','drawrect','eraseshape']}) # 나중에 그림파일로 다운로드 ?
 
-
-#fig.write_html("covid_teamdashboard.html")
+fig.write_html("covid_teamdashboard.html")
 
 
 
