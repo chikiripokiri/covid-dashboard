@@ -17,7 +17,7 @@
 2) 전처리 결과를 kr_covid_temp.txt로 저장
 3) Dash 웹앱 실행
    - 드롭다운1: 확진자/사망자/완치자
-   - 드롭다운2: 매일/주간/월간/분기
+   - 드롭다운2: 매일/주간/월간/분기ㅔㅛ
    - 지역 선택(체크리스트) + [확인] 버튼
    - 선택된 지역에 맞춰 Y축 재구성 + 버블 크기(sqrt 스케일) 재계산
 
@@ -51,8 +51,8 @@ from dash.dependencies import Input, Output, State
 # 1) 전처리: CSV(누적) -> 일일 증분 + 누락 날짜 보정 + 파일 저장
 # ============================================================
 def preprocess_and_save(
-    input_csv: str = "D:/생성 AI 응용 서비스 개발자 양성 과정/AI STUDY/github/teamproject/kr_regional_daily_excel.csv",
-    output_txt: str = "D:/생성 AI 응용 서비스 개발자 양성 과정/AI STUDY/github/teamproject/covid/kr_covid_temp.txt",
+    input_csv: str = "data/kr_regional_daily_excel.csv",
+    output_txt: str = "kr_covid_temp.txt",
 ) -> pd.DataFrame:
     """요구사항의 전처리를 수행하고 결과를 파일로 저장합니다."""
 
@@ -486,8 +486,8 @@ def run_dash_app(df_temp: pd.DataFrame, host: str = "127.0.0.1", port: int = 805
 # 6) main
 # ============================================================
 if __name__ == "__main__":
-    INPUT_CSV = "D:/생성 AI 응용 서비스 개발자 양성 과정/AI STUDY/github/teamproject/kr_regional_daily_excel.csv"
-    OUTPUT_TXT = "D:/생성 AI 응용 서비스 개발자 양성 과정/AI STUDY/github/teamproject/kr_covid_temp.txt"
+    INPUT_CSV = "data/kr_regional_daily_excel.csv"
+    OUTPUT_TXT = "kr_covid_temp.txt"
 
     # 전처리 파일이 없으면 생성
     if not Path(OUTPUT_TXT).exists():
