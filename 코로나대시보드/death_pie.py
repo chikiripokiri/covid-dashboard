@@ -33,6 +33,15 @@ def build_html(df: pd.DataFrame, output_file: Path) -> Path:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"].astype(str), format="%Y%m%d")
 
+    # 일자별 신규 확진자 계산: 지역별 누적값 차분, 감소 구간은 0으로 클립
+    df = df.sort_values(["region", "date"])
+    df["daily_new"] = (
+        df.groupby("region")["confirmed"]
+        .diff()
+        .fillna(df["confirmed"])
+        .clip(lower=0)
+    )
+
     # Week start (Monday) and labels
     df["week_start"] = df["date"] - pd.to_timedelta(df["date"].dt.weekday, unit="d")
     df["week_end"] = df["week_start"] + pd.Timedelta(days=6)
@@ -74,7 +83,7 @@ def build_html(df: pd.DataFrame, output_file: Path) -> Path:
 
     data_map = {}
     for wk, g in df.groupby("week_key"):
-        g_sum = g.groupby("region")["confirmed"].sum()
+        g_sum = g.groupby("region")["daily_new"].sum()
         values = [int(g_sum.get(r, 0)) for r in regions]
         data_map[wk] = {
             "labels": regions,
