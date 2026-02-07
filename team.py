@@ -70,25 +70,25 @@ fig.update_layout(
     
     # 버튼 생성
     updatemenus=[
-        dict(
-            type = "buttons",
-            buttons = list([
-                dict(
-                    label = "한국 전체 신규 확진자 수",
-                    method = "update",
-                    args = [{"visible": [True, False]},
-                            {"title": "한국 전체 신규 확진자 수"}]
-                ),
-                dict(
-                    label = "한국 전체, 대구 일별 확진자 수",
-                    method = "update",
-                    args = [{"visible": [True, True]},
-                            {"title": "한국 전체, 대구 일별 신규 확진자수"}]
-                )
-            ])
-        )
+      dict(
+        type = "dropdown",
+        direction = "down",
+        buttons = list([
+            dict(
+                label = "한국 전체 신규 확진자 수",
+                method = "update",
+                args = [{"visible": [True, False]},
+                        {"title": "한국 전체 신규 확진자 수"}]
+            ),
+            dict(
+                label = "한국 전체, 대구 일별 확진자 수",
+                method = "update",
+                args = [{"visible": [True, True]},
+                        {"title": "한국 전체, 대구 일별 신규 확진자수"}]
+            )
+        ]),
+      )
     ]
-    
 )
 # 모드 바 편집 - 그림그리는거 추가
 fig.show(config = {'modeBarButtonsToAdd': ['drawline','drawopenpath','drawclosedpath',
@@ -130,6 +130,3 @@ with open("covid_teamdashboard.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
 
-
-
-# 처음 날짜부터 4월 10일 정도까지의 대구에서 시작된 1차 대유행 날짜에 따른 지도상 히트맵 구현 =>

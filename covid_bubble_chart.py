@@ -464,7 +464,7 @@ def run_dash_app(df_temp: pd.DataFrame, host: str = "127.0.0.1", port: int = 805
 
     url = f"http://{host}:{port}"
     print("\n" + "=" * 70)
-    print("✅ Dash 서버가 실행 중입니다. 아래 주소를 브라우저에서 여세요!")
+    print("Dash 서버가 실행 중입니다. 아래 주소를 브라우저에서 여세요!")
     print(f"   {url}")
     print("   (종료: 터미널에서 CTRL + C)")
     print("=" * 70 + "\n")
