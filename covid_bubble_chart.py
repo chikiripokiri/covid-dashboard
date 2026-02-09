@@ -486,7 +486,7 @@ def run_dash_app(df_temp: pd.DataFrame, host: str = "127.0.0.1", port: int = 805
 # 6) main
 # ============================================================
 if __name__ == "__main__":
-    INPUT_CSV = "data/kr_regional_daily_excel.csv"
+    INPUT_CSV = "covid-dashboard\\data\\kr_regional_daily_excel.csv"
     OUTPUT_TXT = "kr_covid_temp.txt"
 
     # 전처리 파일이 없으면 생성
